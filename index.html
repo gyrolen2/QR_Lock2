@@ -2,643 +2,169 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Offline QR Lock PWA</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>QR Lock Offline App</title>
+    <!-- Include QR libraries directly from CDN (the Service Worker will cache these for offline use) -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; --bg: #f4f4f4; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 15px; background: var(--bg); color: #333; }
-        .container { max-width: 700px; margin: 0 auto; }
-        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        h2 { margin-top: 0; color: #111; font-size: 1.25rem; border-bottom: 2px solid #eee; padding-bottom: 8px; }
-        label { font-weight: bold; display: block; margin-top: 8px; margin-bottom: 4px; font-size: 0.85rem; }
-        
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
-        @media (max-width: 500px) { .form-grid { grid-template-columns: 1fr; } }
-
-        input[type="text"], input[type="password"], select, textarea, input[type="file"] { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; font-size: 14px; }
-        button { padding: 12px 16px; font-size: 15px; font-weight: bold; cursor: pointer; background: var(--primary); color: white; border: none; border-radius: 4px; width: 100%; margin-top: 10px; transition: 0.2s; }
-        button:hover { opacity: 0.9; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .btn-success { background: var(--success); }
-        .btn-danger { background: var(--danger); }
-        .btn-play { background: #ff9800; font-size: 18px; padding: 15px; border-radius: 50px; width: auto; min-width: 150px; display: block; margin: 20px auto; }
-        .counter { font-size: 13px; padding: 10px; border-radius: 4px; background: #e9ecef; line-height: 1.4; box-sizing: border-box; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 15px; }
-        .tab-btn { flex: 1; padding: 10px; background: #ddd; color: #333; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .tab-btn.active { background: var(--primary); color: white; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        
-        #scanVideo { width: 100%; max-height: 320px; object-fit: cover; border-radius: 6px; background: #000; display: none; }
-        #qrCanvas { display: block; margin: 15px auto; max-width: 100%; height: auto; image-rendering: pixelated; }
-        .output-box { background: #f8f9fa; border: 1px solid #e9ecef; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 13px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
-        
-        .radio-group { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; margin-bottom: 10px; }
-        .radio-container { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: normal; margin: 0; }
-        .radio-container input { width: auto; margin: 0; transform: scale(1.2); }
+        body { font-family: sans-serif; text-align: center; background: #f4f4f4; padding: 20px; }
+        .container { background: white; padding: 20px; border-radius: 10px; max-width: 400px; margin: 0 auto; box-shadow: 0px 4px 10px rgba(0,0,0,0.1); }
+        button { background: #007bff; color: white; border: none; padding: 15px 20px; font-size: 16px; border-radius: 5px; width: 100%; margin: 10px 0; cursor: pointer; }
+        button:active { background: #0056b3; }
+        #qr-reader { width: 100%; display: none; margin-top: 15px; }
+        #qr-canvas-container { margin-top: 20px; position: relative; display: inline-block; }
+        #qr-logo-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; display: none; }
+        input[type="text"] { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; }
+        #result-message { font-weight: bold; margin-top: 15px; color: #333; word-wrap: break-word; }
     </style>
-    <!-- Essential external libraries. Cached via service worker for offline use -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
 <body>
 
 <div class="container">
-    <div class="card">
-        <h2>Global Settings & Metadata Options</h2>
-        <div class="form-grid">
-            <div>
-                <label for="projectName">Project Name:</label>
-                <input type="text" id="projectName" placeholder="Default: Auto-generated">
-            </div>
-            <div>
-                <label for="encPassword">Encryption Password:</label>
-                <input type="password" id="encPassword" placeholder="Optional (AES-256)">
-            </div>
-        </div>
-        <div class="form-grid">
-            <div>
-                <label>GPS Location:</label>
-                <div id="gpsStatus" class="counter">Acquiring GPS...</div>
-            </div>
-            <div style="display: flex; align-items: flex-end;">
-                <button type="button" style="background:#6c757d; margin-top:0;" onclick="updateLocation()">Refresh GPS</button>
-            </div>
-        </div>
+    <h2>QR Lock App</h2>
+    
+    <!-- Option 1: Scanner -->
+    <button onclick="startScanner()">Option 1: Scan QR Code</button>
+    <div id="qr-reader"></div>
+    
+    <hr style="margin: 20px 0;">
+
+    <!-- Option 2: Generator -->
+    <h3>Option 2: Generate</h3>
+    <input type="text" id="qr-input-text" placeholder="Enter text to generate QR...">
+    <button onclick="generateQR()">Generate Embedded QR</button>
+    <div id="qr-canvas-container">
+        <div id="qrcode"></div>
+        <img id="qr-logo-overlay" src="QR_Lock_logo.png" alt="Logo">
     </div>
-
-    <div class="tabs">
-        <button class="tab-btn active" onclick="switchSection('createSec', this)">1. Create QR Code</button>
-        <button class="tab-btn" onclick="switchSection('scanSec', this)">2. Scan QR Code</button>
-    </div>
-
-    <!-- SECTION 1: CREATE -->
-    <div id="createSec" class="tab-content active">
-        <div class="card">
-            <h2>Generate Text Payload</h2>
-            
-            <div id="textInputArea">
-                <label for="textContent">Text Message Payload:</label>
-                <textarea id="textContent" rows="4" placeholder="Type message to encode..."></textarea>
-            </div>
-
-            <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;">
-                <label>Center Logo Options:</label>
-                <div class="radio-group">
-                    <label class="radio-container">
-                        <input type="radio" name="logoOpt" value="none" onchange="toggleCustomLogo()"> 1: No logo
-                    </label>
-                    <label class="radio-container">
-                        <input type="radio" name="logoOpt" value="qrlock" checked onchange="toggleCustomLogo()"> 2: Use standard pre-loaded QR_Lock logo
-                    </label>
-                    <label class="radio-container">
-                        <input type="radio" name="logoOpt" value="custom" onchange="toggleCustomLogo()"> 3: Upload a custom logo image
-                    </label>
-                </div>
-                
-                <div id="customLogoContainer" style="display: none; padding-left: 25px; margin-top: 5px;">
-                    <input type="file" id="customLogoFile" accept="image/*" style="padding: 6px;">
-                </div>
-            </div>
-
-            <button class="btn-success" style="margin-top: 15px;" onclick="generateQRCode()">Generate Offline Encrypted QR Code</button>
-        </div>
-
-        <div class="card" id="qrResultCard" style="display:none;">
-            <h2>Generated QR Code Output</h2>
-            <canvas id="qrCanvas"></canvas>
-            <div id="payloadStats" class="counter"></div>
-            <button class="btn-success" style="margin-top: 15px;" onclick="downloadQRCode()">Save/Download QR Code Image</button>
-        </div>
-    </div>
-
-    <!-- SECTION 2: SCAN -->
-    <div id="scanSec" class="tab-content">
-        <div class="card">
-            <h2>Scan QR Code</h2>
-            
-            <div style="margin-bottom: 20px;">
-                <label>Open Saved QR Code Image:</label>
-                <input type="file" id="qrImageUpload" accept="image/*" onchange="scanFromImage(event)">
-            </div>
-            
-            <div style="text-align: center; margin: 10px 0; font-weight: bold; color: #666;">- OR -</div>
-
-            <label>Scan via Camera:</label>
-            <video id="scanVideo" autoplay playsinline></video>
-            <button id="startCamBtn" onclick="startCameraScan()">Activate Camera Scanner</button>
-            <button id="stopCamBtn" onclick="stopCameraScan()" class="btn-danger" style="display:none;">Stop Camera</button>
-            <div id="scanStatus" class="counter" style="margin-top:10px;">Camera idle. Tap button to start scanning.</div>
-        </div>
-
-        <div class="card" id="passwordPromptCard" style="display:none; border: 2px solid var(--primary);">
-            <h2>Locked Payload</h2>
-            <p style="margin: 0 0 10px 0; font-size:14px;">This QR payload is encrypted with AES-256. Enter password to view content:</p>
-            <input type="password" id="decPassword" placeholder="Enter decryption password">
-            <button onclick="processDecryption()" class="btn-success">Decrypt & Open Payload</button>
-        </div>
-
-        <div class="card" id="scanResultsCard" style="display:none;">
-            <h2>Decoded Payload</h2>
-            <div id="decodedMeta" class="counter" style="margin-bottom:12px;"></div>
-            
-            <!-- Text Output -->
-            <div id="decodedTextContainer" style="display:none;">
-                <label>Decoded Text Message:</label>
-                <div id="decodedText" class="output-box"></div>
-            </div>
-
-            <!-- Audio Output -->
-            <div id="decodedAudioContainer" style="display:none; text-align: center; padding: 20px 0;">
-                <label>Audio Payload Detected</label>
-                <p id="audioStats" style="font-size: 13px; color: #666;"></p>
-                <button id="playAudioBtn" class="btn-play">▶ Play Sound</button>
-            </div>
-        </div>
-    </div>
+    
+    <p id="result-message"></p>
 </div>
 
 <script>
-    // Global Application State
-    let currentLocation = { lat: null, lon: null, text: "GPS Location Not Available" };
-    let qr = null;
-    
-    // Scanner & Audio State
-    let scanStream = null;
-    let scanAnimationFrameId = null;
-    let lastScannedRawData = null;
-    let audioContext = null;
-    let decodedAudioData = null; 
-    let currentPayloadType = null;
-
-    // Embedded Base64 for Standard QR_Lock Logo
-const STANDARD_QRLOCK_LOGO = "QR_Lock_logo.png";
-    document.addEventListener("DOMContentLoaded", () => {
-        requestLocation();
-    });
-
-    // --- Tab Handling ---
-    function switchSection(sectionId, btnElem) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        document.getElementById(sectionId).classList.add('active');
-        btnElem.classList.add('active');
-
-        if(sectionId !== 'scanSec') {
-            stopCameraScan();
-            stopAudio();
-        }
-    }
-
-    function toggleCustomLogo() {
-        const opt = document.querySelector('input[name="logoOpt"]:checked').value;
-        const container = document.getElementById('customLogoContainer');
-        if(opt === 'custom') {
-            container.style.display = 'block';
-        } else {
-            container.style.display = 'none';
-        }
-    }
-
-    // --- GPS Helper ---
-    function requestLocation() {
-        const gpsEl = document.getElementById('gpsStatus');
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    currentLocation.lat = pos.coords.latitude.toFixed(6);
-                    currentLocation.lon = pos.coords.longitude.toFixed(6);
-                    currentLocation.text = `${currentLocation.lat}, ${currentLocation.lon}`;
-                    gpsEl.innerHTML = `<span style="color:var(--success)">📍 ${currentLocation.text}</span>`;
-                },
-                err => {
-                    currentLocation.text = "GPS Error: " + err.message;
-                    gpsEl.innerHTML = `<span style="color:var(--danger)">❌ ${currentLocation.text}</span>`;
-                },
-                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-            );
-        } else {
-            currentLocation.text = "Geolocation not supported";
-            gpsEl.innerHTML = `<span style="color:var(--danger)">❌ Geolocation not supported</span>`;
-        }
-    }
-
-    function updateLocation() {
-        document.getElementById('gpsStatus').innerText = "Refreshing GPS...";
-        requestLocation();
-    }
-
-    // --- Cryptography (AES-GCM Web Crypto) ---
-    async function deriveKey(password, salt) {
-        const enc = new TextEncoder();
-        const keyMaterial = await window.crypto.subtle.importKey(
-            "raw", enc.encode(password), {name: "PBKDF2"}, false, ["deriveBits", "deriveKey"]
-        );
-        return window.crypto.subtle.deriveKey(
-            {name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256"},
-            keyMaterial, {name: "AES-GCM", length: 256}, true, ["encrypt", "decrypt"]
-        );
-    }
-
-    async function encryptData(text, password) {
-        if (!password) return { encrypted: btoa(unescape(encodeURIComponent(text))), salt: null, iv: null };
+    // --- BIRD SONG SYNTHESIZER ---
+    function playBirdSong(qrText) {
+        // Only trigger if the string starts with our custom audio header
+        if (!qrText.startsWith("BS1:")) return false;
         
-        const salt = window.crypto.getRandomValues(new Uint8Array(16));
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const key = await deriveKey(password, salt);
-        const enc = new TextEncoder();
-        const encrypted = await window.crypto.subtle.encrypt({name: "AES-GCM", iv: iv}, key, enc.encode(text));
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const notesData = qrText.replace("BS1:", "");
+        const notes = notesData.split(";");
         
-        return {
-            encrypted: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
-            salt: btoa(String.fromCharCode(...salt)),
-            iv: btoa(String.fromCharCode(...iv))
-        };
-    }
+        let startTime = audioCtx.currentTime + 0.1;
 
-    async function decryptData(encryptedBase64, password, saltBase64, ivBase64) {
-        if (!password && !saltBase64) return decodeURIComponent(escape(atob(encryptedBase64)));
-        
-        const salt = new Uint8Array(atob(saltBase64).split("").map(c => c.charCodeAt(0)));
-        const iv = new Uint8Array(atob(ivBase64).split("").map(c => c.charCodeAt(0)));
-        const encrypted = new Uint8Array(atob(encryptedBase64).split("").map(c => c.charCodeAt(0)));
-        
-        const key = await deriveKey(password, salt);
-        const decryptedBytes = await window.crypto.subtle.decrypt({name: "AES-GCM", iv: iv}, key, encrypted);
-        return new TextDecoder().decode(decryptedBytes);
-    }
+        notes.forEach(note => {
+            if(!note) return;
+            const parts = note.split(',');
+            const freq = parseInt(parts[0]);
+            const durationSec = parseInt(parts[1]) / 1000;
 
-    // --- Logo Helpers ---
-    function getSelectedLogoImage() {
-        return new Promise((resolve, reject) => {
-            const opt = document.querySelector('input[name="logoOpt"]:checked').value;
-            
-            if (opt === 'none') {
-                resolve(null);
-            } else if (opt === 'qrlock') {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => resolve(null);
-                img.src = STANDARD_QRLOCK_LOGO;
-            } else if (opt === 'custom') {
-                const fileInput = document.getElementById('customLogoFile');
-                if (!fileInput.files || fileInput.files.length === 0) {
-                    resolve(null);
-                    return;
-                }
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const img = new Image();
-                    img.onload = () => resolve(img);
-                    img.onerror = () => resolve(null);
-                    img.src = e.target.result;
-                };
-                reader.readAsDataURL(fileInput.files[0]);
-            }
-        });
-    }
-
-    function overlayLogoOnCanvas(canvas, logoImg) {
-        if (!logoImg) return;
-        const ctx = canvas.getContext('2d');
-        const logoSize = canvas.width * 0.25; 
-        const center = canvas.width / 2;
-        const offset = logoSize / 2;
-        
-        ctx.fillStyle = 'white';
-        ctx.fillRect(center - offset - 4, center - offset - 4, logoSize + 8, logoSize + 8);
-        ctx.drawImage(logoImg, center - offset, center - offset, logoSize, logoSize);
-    }
-
-    // --- Generation ---
-    async function generateQRCode() {
-        try {
-            const textContent = document.getElementById('textContent').value;
-            if (!textContent.trim()) { alert("Please enter text payload."); return; }
-
-            const password = document.getElementById('encPassword').value;
-            const projName = document.getElementById('projectName').value || "Offline-Project-" + new Date().getTime();
-            
-            const rawPayload = {
-                type: "text",
-                content: textContent
-            };
-
-            const encryptedBundle = await encryptData(JSON.stringify(rawPayload), password);
-            
-            const finalPayload = {
-                app: "qrlock_pwa",
-                ver: "2.0",
-                project: projName,
-                gps: currentLocation.text,
-                date: new Date().toISOString(),
-                isEncrypted: !!password,
-                payload: encryptedBundle.encrypted,
-                salt: encryptedBundle.salt,
-                iv: encryptedBundle.iv
-            };
-
-            const payloadStr = JSON.stringify(finalPayload);
-            const bytes = new Blob([payloadStr]).size;
-            
-            if (bytes > 2800) { alert(`Payload too large (${bytes} bytes). Reduce text size. QR max is ~2950 bytes.`); return; }
-
-            // Generate QR
-            const canvas = document.getElementById('qrCanvas');
-            qr = new QRious({
-                element: canvas,
-                value: payloadStr,
-                size: Math.min(window.innerWidth - 60, 600),
-                level: 'H', // High error correction to survive logo overlay
-                background: 'white',
-                foreground: 'black'
-            });
-
-            // Apply Logo if selected
-            const logoImg = await getSelectedLogoImage();
-            if (logoImg) {
-                overlayLogoOnCanvas(canvas, logoImg);
-            }
-
-            document.getElementById('payloadStats').innerHTML = `<b>QR Size:</b> ${bytes} bytes <br> <b>Format:</b> ${finalPayload.isEncrypted ? 'AES-256 Encrypted' : 'Plain Base64'}`;
-            document.getElementById('qrResultCard').style.display = 'block';
-
-        } catch (e) {
-            alert("Error generating QR code: " + e.message);
-        }
-    }
-
-    function downloadQRCode() {
-        const canvas = document.getElementById('qrCanvas');
-        const link = document.createElement('a');
-        link.download = `qrlock_${Date.now()}.png`;
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-    }
-
-    // --- Scanning Camera ---
-    function startCameraScan() {
-        const video = document.getElementById('scanVideo');
-        const status = document.getElementById('scanStatus');
-        
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
-            scanStream = stream;
-            video.srcObject = stream;
-            video.setAttribute("playsinline", true);
-            video.style.display = 'block';
-            document.getElementById('startCamBtn').style.display = 'none';
-            document.getElementById('stopCamBtn').style.display = 'block';
-            status.innerText = "Camera active. Point at QR code.";
-            scanAnimationFrameId = requestAnimationFrame(tickCamera);
-        }).catch(err => {
-            alert("Camera access error: " + err);
-        });
-    }
-
-    function stopCameraScan() {
-        if (scanStream) {
-            scanStream.getTracks().forEach(track => track.stop());
-            scanStream = null;
-        }
-        if (scanAnimationFrameId) cancelAnimationFrame(scanAnimationFrameId);
-        
-        document.getElementById('scanVideo').style.display = 'none';
-        document.getElementById('startCamBtn').style.display = 'block';
-        document.getElementById('stopCamBtn').style.display = 'none';
-        document.getElementById('scanStatus').innerText = "Camera stopped.";
-    }
-
-    function tickCamera() {
-        const video = document.getElementById('scanVideo');
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            const canvas = document.createElement("canvas");
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
-            
-            if (code) {
-                stopCameraScan();
-                handleScannedData(code.data);
-                return;
-            }
-        }
-        scanAnimationFrameId = requestAnimationFrame(tickCamera);
-    }
-
-    function scanFromImage(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = e => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement("canvas");
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext("2d");
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (freq > 0) {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
                 
-                if (code) {
-                    handleScannedData(code.data);
+                osc.type = 'sine'; // Sine wave replicates whistling
+                osc.frequency.setValueAtTime(freq, startTime);
+                // Slight pitch glide to make it sound organic
+                osc.frequency.linearRampToValueAtTime(freq + 100, startTime + durationSec);
+
+                // Attack and release volume envelope to prevent digital clicking
+                gainNode.gain.setValueAtTime(0, startTime);
+                gainNode.gain.linearRampToValueAtTime(1, startTime + 0.02);
+                gainNode.gain.setValueAtTime(1, startTime + durationSec - 0.02);
+                gainNode.gain.linearRampToValueAtTime(0, startTime + durationSec);
+
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                osc.start(startTime);
+                osc.stop(startTime + durationSec);
+            }
+            startTime += durationSec;
+        });
+        return true;
+    }
+
+    // --- SCANNER LOGIC ---
+    let html5QrcodeScanner;
+    function startScanner() {
+        document.getElementById("qr-reader").style.display = "block";
+        document.getElementById('result-message').innerText = "Starting camera...";
+        
+        if(!html5QrcodeScanner) {
+            html5QrcodeScanner = new Html5Qrcode("qr-reader");
+        }
+
+        html5QrcodeScanner.start(
+            { facingMode: "environment" }, 
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+                html5QrcodeScanner.stop();
+                document.getElementById("qr-reader").style.display = "none";
+                
+                // Route to audio engine or standard text display
+                if (decodedText.startsWith("BS1:")) {
+                    playBirdSong(decodedText);
+                    document.getElementById('result-message').innerText = "Bird song sequence triggered!";
                 } else {
-                    alert("No valid QR code found in image.");
+                    document.getElementById('result-message').innerText = "Scanned: " + decodedText;
                 }
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
+            },
+            (errorMessage) => { /* Ignore background scanning errors */ }
+        ).catch(err => {
+            document.getElementById('result-message').innerText = "Camera error: " + err;
+        });
     }
 
-    // --- Processing Scan Results ---
-    function handleScannedData(dataString) {
-        stopAudio(); // Ensure any previous audio stops
-        document.getElementById('scanResultsCard').style.display = 'none';
-        document.getElementById('decodedTextContainer').style.display = 'none';
-        document.getElementById('decodedAudioContainer').style.display = 'none';
+    // --- GENERATOR LOGIC ---
+    function generateQR() {
+        const text = document.getElementById("qr-input-text").value;
+        if (!text) {
+            alert("Please enter some text.");
+            return;
+        }
+
+        document.getElementById("qrcode").innerHTML = "";
         
-        try {
-            const parsed = JSON.parse(dataString);
-            if (parsed.app !== "qrlock_pwa") throw new Error("Not a QR_Lock PWA payload");
+        new QRCode(document.getElementById("qrcode"), {
+            text: text,
+            width: 250,
+            height: 250,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.M 
+        });
 
-            lastScannedRawData = parsed;
-            
-            let metaHtml = `<b>Project:</b> ${parsed.project || 'N/A'}<br>
-                            <b>Date:</b> ${new Date(parsed.date).toLocaleString()}<br>
-                            <b>Original GPS:</b> ${parsed.gps || 'Unknown'}<br>
-                            <b>Encryption:</b> ${parsed.isEncrypted ? '<span style="color:red">AES-256 Locked</span>' : '<span style="color:green">Unlocked</span>'}`;
-            
-            document.getElementById('decodedMeta').innerHTML = metaHtml;
-
-            if (parsed.isEncrypted) {
-                document.getElementById('passwordPromptCard').style.display = 'block';
-                document.getElementById('decPassword').value = '';
-                document.getElementById('decPassword').focus();
-            } else {
-                document.getElementById('passwordPromptCard').style.display = 'none';
-                processDecryption(); // Will just base64 decode if not encrypted
-            }
-
-        } catch (e) {
-            alert("Unrecognized format. Raw output:\n\n" + dataString.substring(0, 100) + "...");
-        }
+        // Display the custom offline logo over the center
+        document.getElementById("qr-logo-overlay").style.display = "block";
+        document.getElementById('result-message').innerText = "QR Code Generated.";
     }
 
-    async function processDecryption() {
-        if (!lastScannedRawData) return;
-        
-        let pwd = null;
-        if (lastScannedRawData.isEncrypted) {
-            pwd = document.getElementById('decPassword').value;
-            if (!pwd) { alert("Password required!"); return; }
-        }
-
-        try {
-            const decryptedString = await decryptData(
-                lastScannedRawData.payload, 
-                pwd, 
-                lastScannedRawData.salt, 
-                lastScannedRawData.iv
-            );
-            
-            const payload = JSON.parse(decryptedString);
-            document.getElementById('passwordPromptCard').style.display = 'none';
-            document.getElementById('scanResultsCard').style.display = 'block';
-            
-            // Route payload based on type
-            currentPayloadType = payload.type;
-            if (payload.type === 'text') {
-                document.getElementById('decodedTextContainer').style.display = 'block';
-                document.getElementById('decodedText').innerText = payload.content;
-            } else if (payload.type === 'birdsong' || payload.type === 'audio' || payload.type === 'audio_adpcm') {
-                document.getElementById('decodedAudioContainer').style.display = 'block';
-                decodedAudioData = payload.content; // The Base64 string payload
-                
-                let approxBytes = Math.round(decodedAudioData.length * 0.75);
-                document.getElementById('audioStats').innerText = `Type: ${payload.type.toUpperCase()} | Data Size: ~${approxBytes} bytes`;
-                
-                // Attach correct play function
-                document.getElementById('playAudioBtn').onclick = () => {
-                    playAudioData(payload.type, decodedAudioData);
-                };
-            } else {
-                alert("Unknown payload type: " + payload.type);
-            }
-
-        } catch (e) {
-            alert("Decryption failed. Wrong password or corrupted data.");
-            console.error(e);
-        }
-    }
-
-    // --- Audio Replay / Synthesizer Web Audio API ---
-    function stopAudio() {
-        if (audioContext) {
-            audioContext.close();
-            audioContext = null;
-        }
-    }
-
-    function playAudioData(type, base64Data) {
-        stopAudio(); // Reset context
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioContextClass();
-        
-        if (type === 'birdsong') {
-            // EXPERIMENTAL PARAMETRIC SYNTH (10ms Frames)
-            // Expecting binary layout: [PitchByte1, AmpByte1, PitchByte2, AmpByte2, ...]
-            let binaryStr = atob(base64Data);
-            let len = binaryStr.length;
-            
-            let osc = audioContext.createOscillator();
-            let gainNode = audioContext.createGain();
-            
-            osc.type = 'sine'; // Bird whistles map well to sine
-            osc.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            let startTime = audioContext.currentTime + 0.1;
-            let frameDuration = 0.01; // 10ms
-            
-            // Initialize flat volume
-            gainNode.gain.setValueAtTime(0, startTime);
-            
-            for (let i = 0; i < len; i += 2) {
-                let pByte = binaryStr.charCodeAt(i);
-                let aByte = binaryStr.charCodeAt(i+1);
-                
-                // Demap: 0-255 back to ~1000Hz - 8000Hz
-                let freq = 1000 + (pByte * 27.45); 
-                // Demap: 0-255 back to 0.0 - 1.0
-                let amp = aByte / 255.0;
-                
-                let time = startTime + ((i/2) * frameDuration);
-                
-                osc.frequency.setValueAtTime(freq, time);
-                gainNode.gain.setValueAtTime(amp, time);
-            }
-            
-            osc.start(startTime);
-            osc.stop(startTime + ((len/2) * frameDuration));
-            
-        } else if (type === 'audio_adpcm' || type === 'audio') {
-            // STANDARD RAW DECODER FALLBACK 
-            // In case you encode standard low-res raw PCM instead of parametric synth
-            let binaryStr = atob(base64Data);
-            let len = binaryStr.length;
-            
-            // Assuming 8000Hz, 8-bit unsigned PCM for fallback
-            let sampleRate = 8000;
-            let audioBuffer = audioContext.createBuffer(1, len, sampleRate);
-            let channelData = audioBuffer.getChannelData(0);
-            
-            for (let i = 0; i < len; i++) {
-                // Convert unsigned 8-bit (0 to 255) to float (-1.0 to 1.0)
-                channelData[i] = (binaryStr.charCodeAt(i) - 128) / 128.0;
-            }
-            
-            let source = audioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(audioContext.destination);
-            source.start(0);
-        }
+    // --- OFFLINE SERVICE WORKER ---
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            const swCode = `
+                const CACHE_NAME = 'qr-lock-cache-v3';
+                const urlsToCache = [
+                    './',
+                    './index.html',
+                    './QR_Lock_logo.png',
+                    'https://unpkg.com/html5-qrcode',
+                    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+                ];
+                self.addEventListener('install', event => {
+                    event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)));
+                });
+                self.addEventListener('fetch', event => {
+                    event.respondWith(caches.match(event.request).then(response => response || fetch(event.request)));
+                });
+            `;
+            const blob = new Blob([swCode], {type: 'application/javascript'});
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl);
+        });
     }
 </script>
-
-<!-- Service Worker for offline PWA installation -->
-<script>
-if ('serviceWorker' in navigator) {
-    const swCode = `
-    const CACHE_NAME = 'qr-lock-cache-v2';
- const urlsToCache = [
-  './',
-  './index.html',
-  './QR_Lock_logo.png'
-];
-    self.addEventListener('install', event => {
-        event.waitUntil(
-            caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-        );
-    });
-    self.addEventListener('fetch', event => {
-        event.respondWith(
-            caches.match(event.request).then(response => response || fetch(event.request))
-        );
-    });
-    `;
-    const blob = new Blob([swCode], { type: 'application/javascript' });
-    const swUrl = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(swUrl).then(reg => {
-        console.log('Service Worker Registered (Offline Ready)', reg);
-    }).catch(err => {
-        console.log('SW Registration failed: ', err);
-    });
-}
-</script>
-
 </body>
 </html>
