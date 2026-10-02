@@ -172,7 +172,7 @@
     let currentPayloadType = null;
 
     // Embedded Base64 for Standard QR_Lock Logo
-const STANDARD_QRLOCK_LOGO = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjIwIiBmaWxsPSIjMDA3YmZmIi8+PHBhdGggZD0iTTMwIDUwIHYtMTUgYTIwIDIwIDAgMCAxIDQwIDAgdjE1IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxyZWN0IHg9IjI1IiB5PSI1MCIgd2lkdGg9IjUwIiBoZWlnaHQ9IjM1IiByeD0iOCIgZmlsbD0id2hpdGUiLz48Y2lyY2xlIGN4PSI1MCIgY3k9IjY1IiByPSI1IiBmaWxsPSIjMDA3YmZmIi8+PHBhdGggZD0iTTUwIDcwIHYgOCIgc3Ryb2tlPSIjMDA3YmZmIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==";
+const STANDARD_QRLOCK_LOGO = "QR_Lock_logo.png";
     document.addEventListener("DOMContentLoaded", () => {
         requestLocation();
     });
@@ -613,12 +613,12 @@ const STANDARD_QRLOCK_LOGO = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDov
 <script>
 if ('serviceWorker' in navigator) {
     const swCode = `
-    const CACHE_NAME = 'qrlock-pwa-v2';
-    const urlsToCache = [
-        '/',
-        'https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js',
-        'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'
-    ];
+    const CACHE_NAME = 'qr-lock-cache-v2';
+ const urlsToCache = [
+  './',
+  './index.html',
+  './QR_Lock_logo.png'
+];
     self.addEventListener('install', event => {
         event.waitUntil(
             caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
